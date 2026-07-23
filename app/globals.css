@@ -24,6 +24,7 @@ html {
 
 body {
   margin: 0;
+  overflow-x: clip;
   background: #fff;
   color: var(--ink);
   font-family: var(--font-geist), Arial, Helvetica, sans-serif;
@@ -218,9 +219,13 @@ a {
 
 .hero-shell {
   position: relative;
-  overflow: hidden;
+  overflow: visible;
   padding: 90px 0 34px;
   isolation: isolate;
+}
+
+.hero-shell:focus-within {
+  z-index: 10;
 }
 
 .hero-shell::after {
