@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { DiscountSubmissionForm } from "@/components/DiscountSubmissionForm";
 import { Logo } from "@/components/Logo";
 
@@ -13,7 +14,7 @@ export default function SubmitDiscountPage() {
     <main className="submission-page">
       <div className="submission-page-header">
         <Logo />
-        <a href="/">Back to homepage</a>
+        <Link href="/">Back to homepage</Link>
       </div>
       <DiscountSubmissionForm />
     </main>

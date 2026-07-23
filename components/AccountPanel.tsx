@@ -12,9 +12,16 @@ type CollegeOption = {
   short_name: string;
 };
 
+type SavedDeal = {
+  id: string;
+  title: string;
+  businessName: string;
+};
+
 export function AccountPanel() {
   const [user, setUser] = useState<User | null>(null);
   const [colleges, setColleges] = useState<CollegeOption[]>([]);
+  const [savedDeals, setSavedDeals] = useState<SavedDeal[]>([]);
   const [collegeId, setCollegeId] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -58,6 +65,49 @@ export function AccountPanel() {
 
       setColleges((collegeRows as CollegeOption[] | null) ?? []);
       setCollegeId(profile?.college_id ?? "");
+
+      const { data: savedRows } = await supabase
+        .from("saves")
+        .select("discount_id")
+        .eq("user_id", currentUser.id)
+        .order("created_at", { ascending: false });
+      const savedIds = (savedRows ?? []).map((row) => row.discount_id);
+
+      if (savedIds.length > 0) {
+        const { data: discountRows } = await supabase
+          .from("discounts")
+          .select("id, title, business_id")
+          .in("id", savedIds);
+        const businessIds = [
+          ...new Set((discountRows ?? []).map((row) => row.business_id)),
+        ];
+        const { data: businessRows } = await supabase
+          .from("businesses")
+          .select("id, name")
+          .in("id", businessIds);
+        const businessNames = new Map(
+          (businessRows ?? []).map((business) => [
+            business.id,
+            business.name,
+          ]),
+        );
+        const discountsById = new Map(
+          (discountRows ?? []).map((discount) => [discount.id, discount]),
+        );
+
+        setSavedDeals(
+          savedIds
+            .map((id) => discountsById.get(id))
+            .filter((discount) => Boolean(discount))
+            .map((discount) => ({
+              id: discount!.id,
+              title: discount!.title,
+              businessName:
+                businessNames.get(discount!.business_id) ?? "CampusPerks deal",
+            })),
+        );
+      }
+
       setLoading(false);
     }
 
@@ -197,16 +247,40 @@ export function AccountPanel() {
           )}
         </section>
 
-        <section className="account-card account-coming-card">
-          <span className="account-card-icon">
-            <Icon name="heart" size={22} />
-          </span>
+        <section className="account-card account-saved-card">
+          <div className="account-saved-heading">
+            <span className="account-card-icon">
+              <Icon name="heart" size={22} />
+            </span>
+            <span className="account-saved-count">{savedDeals.length}</span>
+          </div>
           <h2>Saved discounts</h2>
-          <p>
-            Saved deals will appear here after voting and saving are connected
-            in the next step.
-          </p>
-          <span className="account-coming-pill">Next feature</span>
+          {savedDeals.length > 0 ? (
+            <>
+              <p>Your saved offers are ready whenever you need them.</p>
+              <div className="account-saved-list">
+                {savedDeals.map((deal) => (
+                  <Link href={`/discounts/${deal.id}`} key={deal.id}>
+                    <span>
+                      <strong>{deal.businessName}</strong>
+                      <small>{deal.title}</small>
+                    </span>
+                    <Icon name="arrow-right" size={16} />
+                  </Link>
+                ))}
+              </div>
+            </>
+          ) : (
+            <>
+              <p>
+                Tap the heart on any college discount to keep it here for
+                later.
+              </p>
+              <Link className="account-browse-link" href="/">
+                Find your college <Icon name="arrow-right" size={15} />
+              </Link>
+            </>
+          )}
         </section>
       </div>
 

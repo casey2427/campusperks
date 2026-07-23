@@ -31,6 +31,9 @@ export interface Discount {
   verificationStatus: VerificationStatus;
   lastChecked: string;
   accent: string;
+  helpfulCount?: number;
+  notHelpfulCount?: number;
+  isDemo?: boolean;
 }
 
 export interface Category {

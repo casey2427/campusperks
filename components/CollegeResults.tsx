@@ -1,39 +1,352 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { colleges, collegeDiscounts, verificationLabels } from "@/data/mock-data";
-import type { College, VerificationStatus } from "@/types";
+import {
+  getSupabaseBrowserClient,
+  isSupabaseConfigured,
+} from "@/lib/supabase/client";
+import type {
+  Business,
+  College,
+  Discount,
+  VerificationStatus,
+} from "@/types";
 import { DealCard } from "./DealCard";
 import { Icon } from "./Icon";
 
-type SortOption = "distance" | "recent" | "business";
+type SortOption = "recommended" | "distance" | "recent" | "business";
+type DataSource = "loading" | "database" | "mock";
+
+type DbCollege = {
+  id: string;
+};
+
+type DbDiscountCollege = {
+  discount_id: string;
+  distance_miles: number | string | null;
+};
+
+type DbDiscount = {
+  id: string;
+  business_id: string;
+  title: string;
+  category: string;
+  address: string;
+  verification_status: string;
+  last_checked_at: string | null;
+  helpful_count: number | null;
+  not_helpful_count: number | null;
+  is_demo: boolean | null;
+};
+
+type DbBusiness = {
+  id: string;
+  name: string;
+  slug: string | null;
+};
+
+type DbVote = {
+  discount_id: string;
+  value: number;
+};
+
+type DbSave = {
+  discount_id: string;
+};
 
 const verificationOptions = Object.entries(verificationLabels) as [
   VerificationStatus,
   string,
 ][];
 
+const verificationWeights: Record<VerificationStatus, number> = {
+  "business-verified": 50,
+  "official-source": 45,
+  "student-confirmed": 35,
+  "pending-review": 10,
+  "possibly-outdated": -40,
+};
+
+const businessColors = [
+  "#6d4de8",
+  "#0f766e",
+  "#be185d",
+  "#2563eb",
+  "#c2410c",
+  "#4f46e5",
+  "#15803d",
+  "#9333ea",
+];
+
+const categoryAccents: Record<string, string> = {
+  "Food and drinks": "linear-gradient(135deg, #ede9fe, #dbeafe)",
+  Fitness: "linear-gradient(135deg, #d1fae5, #e0f2fe)",
+  Entertainment: "linear-gradient(135deg, #fce7f3, #f3e8ff)",
+  Technology: "linear-gradient(135deg, #dbeafe, #eef2ff)",
+  Travel: "linear-gradient(135deg, #ffedd5, #fef3c7)",
+  Shopping: "linear-gradient(135deg, #ede9fe, #e0e7ff)",
+  Beauty: "linear-gradient(135deg, #fce7f3, #ffe4e6)",
+  Subscriptions: "linear-gradient(135deg, #e0e7ff, #ede9fe)",
+};
+
 function distanceValue(distance: string) {
-  return Number.parseFloat(distance) || Number.POSITIVE_INFINITY;
+  const parsed = Number.parseFloat(distance);
+  return Number.isFinite(parsed) ? parsed : Number.POSITIVE_INFINITY;
+}
+
+function normalizeVerification(value: string): VerificationStatus {
+  const normalized = value.replaceAll("_", "-") as VerificationStatus;
+  return normalized in verificationLabels ? normalized : "pending-review";
+}
+
+function businessInitials(name: string) {
+  return name
+    .split(/\s+/)
+    .map((word) => word[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+}
+
+function businessColor(id: string) {
+  const total = Array.from(id).reduce(
+    (sum, character) => sum + character.charCodeAt(0),
+    0,
+  );
+  return businessColors[total % businessColors.length];
+}
+
+function formatCheckedDate(value: string | null) {
+  if (!value) return "Not checked yet";
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Not checked yet";
+
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(date);
+}
+
+function recommendedScore(discount: Discount) {
+  const checkedAt = new Date(discount.lastChecked).getTime();
+  const daysSinceCheck = Number.isNaN(checkedAt)
+    ? Number.POSITIVE_INFINITY
+    : Math.max(0, (Date.now() - checkedAt) / 86_400_000);
+  const recencyPoints = daysSinceCheck <= 7 ? 20 : daysSinceCheck <= 30 ? 10 : 0;
+
+  return (
+    verificationWeights[discount.verificationStatus] +
+    (discount.helpfulCount ?? 0) * 3 -
+    (discount.notHelpfulCount ?? 0) * 4 +
+    recencyPoints -
+    distanceValue(discount.distance) * 2
+  );
 }
 
 export function CollegeResults({ college }: { college: College }) {
   const router = useRouter();
+  const [deals, setDeals] = useState<Discount[]>(collegeDiscounts);
+  const [dataSource, setDataSource] = useState<DataSource>(
+    isSupabaseConfigured() ? "loading" : "mock",
+  );
+  const [loadError, setLoadError] = useState("");
+  const [actionError, setActionError] = useState("");
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [userVotes, setUserVotes] = useState<Record<string, -1 | 1>>({});
+  const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
+  const [busyActions, setBusyActions] = useState<Set<string>>(new Set());
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("All");
   const [verification, setVerification] = useState("all");
-  const [sort, setSort] = useState<SortOption>("distance");
+  const [sort, setSort] = useState<SortOption>("recommended");
+
+  useEffect(() => {
+    let isActive = true;
+
+    async function loadDeals() {
+      const supabase = getSupabaseBrowserClient();
+
+      if (!supabase) {
+        setDataSource("mock");
+        return;
+      }
+
+      try {
+        const { data: collegeData, error: collegeError } = await supabase
+          .from("colleges")
+          .select("id")
+          .eq("slug", college.slug)
+          .maybeSingle();
+
+        if (collegeError) throw collegeError;
+
+        const databaseCollege = collegeData as DbCollege | null;
+        if (!databaseCollege) {
+          throw new Error("This college is not available in the database yet.");
+        }
+
+        const { data: mappingData, error: mappingError } = await supabase
+          .from("discount_colleges")
+          .select("discount_id, distance_miles")
+          .eq("college_id", databaseCollege.id);
+
+        if (mappingError) throw mappingError;
+
+        const mappings = (mappingData ?? []) as DbDiscountCollege[];
+        const discountIds = mappings.map((item) => item.discount_id);
+
+        if (discountIds.length === 0) {
+          if (!isActive) return;
+          setDeals([]);
+          setDataSource("database");
+          setCurrentUserId(
+            (await supabase.auth.getUser()).data.user?.id ?? null,
+          );
+          return;
+        }
+
+        const { data: discountData, error: discountError } = await supabase
+          .from("discounts")
+          .select(
+            "id, business_id, title, category, address, verification_status, last_checked_at, helpful_count, not_helpful_count, is_demo",
+          )
+          .in("id", discountIds)
+          .eq("status", "active");
+
+        if (discountError) throw discountError;
+
+        const discountRows = (discountData ?? []) as DbDiscount[];
+        const businessIds = [
+          ...new Set(discountRows.map((item) => item.business_id)),
+        ];
+        const { data: businessData, error: businessError } = await supabase
+          .from("businesses")
+          .select("id, name, slug")
+          .in("id", businessIds);
+
+        if (businessError) throw businessError;
+
+        const businessRows = (businessData ?? []) as DbBusiness[];
+        const businessesById = new Map(
+          businessRows.map((item) => [item.id, item]),
+        );
+        const distancesById = new Map(
+          mappings.map((item) => [
+            item.discount_id,
+            item.distance_miles === null
+              ? "Distance unavailable"
+              : `${Number(item.distance_miles).toFixed(1)} mi`,
+          ]),
+        );
+
+        const mappedDeals = discountRows
+          .map((item): Discount | null => {
+            const businessRow = businessesById.get(item.business_id);
+            if (!businessRow) return null;
+
+            const business: Business = {
+              id: businessRow.id,
+              name: businessRow.name,
+              slug: businessRow.slug ?? businessRow.id,
+              initials: businessInitials(businessRow.name),
+              color: businessColor(businessRow.id),
+            };
+
+            return {
+              id: item.id,
+              business,
+              title: item.title,
+              category: item.category,
+              address: item.address,
+              distance: distancesById.get(item.id) ?? "Distance unavailable",
+              verificationStatus: normalizeVerification(
+                item.verification_status,
+              ),
+              lastChecked: formatCheckedDate(item.last_checked_at),
+              accent:
+                categoryAccents[item.category] ??
+                "linear-gradient(135deg, #ede9fe, #dbeafe)",
+              helpfulCount: item.helpful_count ?? 0,
+              notHelpfulCount: item.not_helpful_count ?? 0,
+              isDemo: item.is_demo ?? false,
+            };
+          })
+          .filter((item): item is Discount => item !== null);
+
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+
+        if (!isActive) return;
+
+        setDeals(mappedDeals);
+        setDataSource("database");
+        setCurrentUserId(user?.id ?? null);
+        setLoadError("");
+
+        if (user && mappedDeals.length > 0) {
+          const ids = mappedDeals.map((item) => item.id);
+          const [{ data: voteData }, { data: saveData }] = await Promise.all([
+            supabase
+              .from("votes")
+              .select("discount_id, value")
+              .eq("user_id", user.id)
+              .in("discount_id", ids),
+            supabase
+              .from("saves")
+              .select("discount_id")
+              .eq("user_id", user.id)
+              .in("discount_id", ids),
+          ]);
+
+          if (!isActive) return;
+
+          const nextVotes: Record<string, -1 | 1> = {};
+          ((voteData ?? []) as DbVote[]).forEach((vote) => {
+            if (vote.value === 1 || vote.value === -1) {
+              nextVotes[vote.discount_id] = vote.value;
+            }
+          });
+          setUserVotes(nextVotes);
+          setSavedIds(
+            new Set(
+              ((saveData ?? []) as DbSave[]).map((save) => save.discount_id),
+            ),
+          );
+        }
+      } catch (error) {
+        if (!isActive) return;
+        setDeals(collegeDiscounts);
+        setDataSource("mock");
+        setLoadError(
+          error instanceof Error
+            ? `The database could not be loaded: ${error.message}`
+            : "The database could not be loaded. Showing preview data instead.",
+        );
+      }
+    }
+
+    loadDeals();
+
+    return () => {
+      isActive = false;
+    };
+  }, [college.slug]);
 
   const availableCategories = useMemo(
-    () => ["All", ...new Set(collegeDiscounts.map((deal) => deal.category))],
-    [],
+    () => ["All", ...new Set(deals.map((deal) => deal.category))],
+    [deals],
   );
 
   const filteredDeals = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
 
-    return collegeDiscounts
+    return deals
       .filter((deal) => {
         const matchesQuery =
           !normalizedQuery ||
@@ -52,6 +365,10 @@ export function CollegeResults({ college }: { college: College }) {
         return matchesQuery && matchesCategory && matchesVerification;
       })
       .sort((a, b) => {
+        if (sort === "recommended") {
+          return recommendedScore(b) - recommendedScore(a);
+        }
+
         if (sort === "recent") {
           return (
             new Date(b.lastChecked).getTime() -
@@ -65,20 +382,141 @@ export function CollegeResults({ college }: { college: College }) {
 
         return distanceValue(a.distance) - distanceValue(b.distance);
       });
-  }, [category, query, sort, verification]);
+  }, [category, deals, query, sort, verification]);
 
   const filtersAreActive =
     query !== "" ||
     category !== "All" ||
     verification !== "all" ||
-    sort !== "distance";
+    sort !== "recommended";
 
   function clearFilters() {
     setQuery("");
     setCategory("All");
     setVerification("all");
-    setSort("distance");
+    setSort("recommended");
   }
+
+  function requireLogin() {
+    router.push(`/login?next=/colleges/${college.slug}`);
+  }
+
+  function setBusy(key: string, busy: boolean) {
+    setBusyActions((current) => {
+      const next = new Set(current);
+      if (busy) next.add(key);
+      else next.delete(key);
+      return next;
+    });
+  }
+
+  async function handleVote(discountId: string, value: -1 | 1) {
+    if (!currentUserId) {
+      requireLogin();
+      return;
+    }
+
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase || dataSource !== "database") return;
+
+    const key = `vote:${discountId}`;
+    const previousVote = userVotes[discountId];
+    setBusy(key, true);
+    setActionError("");
+
+    const result =
+      previousVote === value
+        ? await supabase
+            .from("votes")
+            .delete()
+            .eq("user_id", currentUserId)
+            .eq("discount_id", discountId)
+        : await supabase.from("votes").upsert(
+            {
+              user_id: currentUserId,
+              discount_id: discountId,
+              value,
+            },
+            { onConflict: "user_id,discount_id" },
+          );
+
+    if (result.error) {
+      setActionError(result.error.message);
+      setBusy(key, false);
+      return;
+    }
+
+    setUserVotes((current) => {
+      const next = { ...current };
+      if (previousVote === value) delete next[discountId];
+      else next[discountId] = value;
+      return next;
+    });
+
+    setDeals((current) =>
+      current.map((deal) => {
+        if (deal.id !== discountId) return deal;
+
+        let helpfulCount = deal.helpfulCount ?? 0;
+        let notHelpfulCount = deal.notHelpfulCount ?? 0;
+
+        if (previousVote === 1) helpfulCount = Math.max(0, helpfulCount - 1);
+        if (previousVote === -1) {
+          notHelpfulCount = Math.max(0, notHelpfulCount - 1);
+        }
+        if (previousVote !== value) {
+          if (value === 1) helpfulCount += 1;
+          if (value === -1) notHelpfulCount += 1;
+        }
+
+        return { ...deal, helpfulCount, notHelpfulCount };
+      }),
+    );
+    setBusy(key, false);
+  }
+
+  async function handleSave(discountId: string) {
+    if (!currentUserId) {
+      requireLogin();
+      return;
+    }
+
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase || dataSource !== "database") return;
+
+    const key = `save:${discountId}`;
+    const isSaved = savedIds.has(discountId);
+    setBusy(key, true);
+    setActionError("");
+
+    const result = isSaved
+      ? await supabase
+          .from("saves")
+          .delete()
+          .eq("user_id", currentUserId)
+          .eq("discount_id", discountId)
+      : await supabase.from("saves").insert({
+          user_id: currentUserId,
+          discount_id: discountId,
+        });
+
+    if (result.error) {
+      setActionError(result.error.message);
+      setBusy(key, false);
+      return;
+    }
+
+    setSavedIds((current) => {
+      const next = new Set(current);
+      if (isSaved) next.delete(discountId);
+      else next.add(discountId);
+      return next;
+    });
+    setBusy(key, false);
+  }
+
+  const isDatabaseData = dataSource === "database";
+  const allDealsAreDemo = deals.length > 0 && deals.every((deal) => deal.isDemo);
 
   return (
     <>
@@ -86,9 +524,9 @@ export function CollegeResults({ college }: { college: College }) {
         <div className="college-results-glow college-results-glow-left" />
         <div className="college-results-glow college-results-glow-right" />
         <div className="container college-results-hero-inner">
-          <a className="college-back-link" href="/">
+          <Link className="college-back-link" href="/">
             <span aria-hidden="true">←</span> Search another college
-          </a>
+          </Link>
 
           <div className="college-results-heading">
             <span className="college-monogram" aria-hidden="true">
@@ -99,19 +537,26 @@ export function CollegeResults({ college }: { college: College }) {
                 .slice(0, 3)}
             </span>
             <div>
-              <span className="college-demo-pill">Demo results</span>
+              <span className="college-demo-pill">
+                {dataSource === "loading"
+                  ? "Loading listings"
+                  : allDealsAreDemo || dataSource === "mock"
+                    ? "Demo results"
+                    : "CampusPerks results"}
+              </span>
               <h1>Student discounts near {college.shortName}</h1>
               <p>
-                Explore sample offers near {college.name} in {college.location}.
-                Real listings and distances will be added in a future version.
+                Browse nearby student offers, sort by trusted community
+                recommendations, and help classmates by confirming what works.
+                Development listings remain clearly labeled as demo data.
               </p>
             </div>
           </div>
 
           <div className="college-quick-info" aria-label="Results overview">
             <div>
-              <strong>{collegeDiscounts.length}</strong>
-              <span>Sample deals</span>
+              <strong>{dataSource === "loading" ? "—" : deals.length}</strong>
+              <span>{allDealsAreDemo ? "Demo deals" : "Deals"}</span>
             </div>
             <div>
               <strong>{availableCategories.length - 1}</strong>
@@ -125,8 +570,37 @@ export function CollegeResults({ college }: { college: College }) {
         </div>
       </section>
 
-      <section className="college-results-section" aria-labelledby="deal-results-heading">
+      <section
+        className="college-results-section"
+        aria-labelledby="deal-results-heading"
+      >
         <div className="container">
+          {loadError && (
+            <div className="college-data-message warning" role="alert">
+              <Icon name="flag" size={17} />
+              <span>{loadError}</span>
+            </div>
+          )}
+
+          {isDatabaseData && !currentUserId && (
+            <div className="college-data-message">
+              <Icon name="user" size={17} />
+              <span>
+                <Link href={`/login?next=/colleges/${college.slug}`}>
+                  Log in
+                </Link>{" "}
+                to vote and save discounts. Browsing is open to everyone.
+              </span>
+            </div>
+          )}
+
+          {actionError && (
+            <div className="college-data-message warning" role="alert">
+              <Icon name="flag" size={17} />
+              <span>{actionError}</span>
+            </div>
+          )}
+
           <div className="college-results-toolbar">
             <div className="college-switcher">
               <label htmlFor="college-switcher">College or university</label>
@@ -207,6 +681,7 @@ export function CollegeResults({ college }: { college: College }) {
                 onChange={(event) => setSort(event.target.value as SortOption)}
                 value={sort}
               >
+                <option value="recommended">Recommended</option>
                 <option value="distance">Distance</option>
                 <option value="recent">Recently checked</option>
                 <option value="business">Business name</option>
@@ -226,21 +701,54 @@ export function CollegeResults({ college }: { college: College }) {
 
           <div className="college-results-count">
             <div>
-              <span className="eyebrow">Browse demo listings</span>
+              <span className="eyebrow">
+                {dataSource === "loading"
+                  ? "Loading database"
+                  : isDatabaseData
+                    ? "Community-ranked listings"
+                    : "Browse preview listings"}
+              </span>
               <h2 id="deal-results-heading">
-                {filteredDeals.length}{" "}
-                {filteredDeals.length === 1 ? "discount" : "discounts"} found
+                {dataSource === "loading"
+                  ? "Loading discounts…"
+                  : `${filteredDeals.length} ${
+                      filteredDeals.length === 1 ? "discount" : "discounts"
+                    } found`}
               </h2>
             </div>
-            <a href="/submit-discount">
+            <Link href="/submit-discount">
               Know another deal? <strong>Submit it</strong>
-            </a>
+            </Link>
           </div>
 
-          {filteredDeals.length > 0 ? (
+          {dataSource === "loading" ? (
+            <div className="college-results-loading" role="status">
+              <span />
+              Loading discounts from CampusPerks…
+            </div>
+          ) : filteredDeals.length > 0 ? (
             <div className="college-deals-grid">
               {filteredDeals.map((discount) => (
-                <DealCard discount={discount} key={discount.id} />
+                <DealCard
+                  busy={
+                    busyActions.has(`vote:${discount.id}`) ||
+                    busyActions.has(`save:${discount.id}`)
+                  }
+                  discount={discount}
+                  key={discount.id}
+                  onSave={
+                    isDatabaseData
+                      ? () => handleSave(discount.id)
+                      : undefined
+                  }
+                  onVote={
+                    isDatabaseData
+                      ? (value) => handleVote(discount.id, value)
+                      : undefined
+                  }
+                  saved={isDatabaseData ? savedIds.has(discount.id) : undefined}
+                  userVote={userVotes[discount.id]}
+                />
               ))}
             </div>
           ) : (
@@ -248,10 +756,10 @@ export function CollegeResults({ college }: { college: College }) {
               <span className="college-empty-icon">
                 <Icon name="search" size={26} />
               </span>
-              <h2>No demo deals match those filters</h2>
+              <h2>No discounts match those filters</h2>
               <p>
                 Try a different search term or clear the filters to see every
-                sample listing near {college.shortName}.
+                listing near {college.shortName}.
               </p>
               <button
                 className="button button-primary"
@@ -275,9 +783,9 @@ export function CollegeResults({ college }: { college: College }) {
               review until they can be checked.
             </p>
           </div>
-          <a className="button button-primary" href="/submit-discount">
+          <Link className="button button-primary" href="/submit-discount">
             Submit a Discount <Icon name="arrow-right" size={17} />
-          </a>
+          </Link>
         </div>
       </section>
     </>

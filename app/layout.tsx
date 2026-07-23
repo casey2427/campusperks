@@ -9,6 +9,9 @@ const geist = Geist({
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://www.campusperks.example"),
+  other: {
+    "codex-preview": "development",
+  },
   title: "Student Discounts Near Me | CampusPerks",
   description:
     "Enter your college to discover nearby student discounts on food, shopping, fitness, entertainment, technology, and more.",

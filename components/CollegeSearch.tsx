@@ -20,7 +20,6 @@ export function CollegeSearch() {
   const [locationError, setLocationError] = useState(false);
 
   useEffect(() => {
-    setLoading(true);
     const timer = window.setTimeout(() => {
       const term = query.trim().toLowerCase();
       const matches = colleges.filter((college) =>
@@ -118,6 +117,7 @@ export function CollegeSearch() {
             id="college-input"
             onBlur={() => window.setTimeout(() => setOpen(false), 120)}
             onChange={(event) => {
+              setLoading(true);
               setQuery(event.target.value);
               setSelected(null);
               setOpen(true);
@@ -135,6 +135,7 @@ export function CollegeSearch() {
               aria-label="Clear college search"
               className="clear-search"
               onClick={() => {
+                setLoading(true);
                 setQuery("");
                 setSelected(null);
                 setOpen(true);

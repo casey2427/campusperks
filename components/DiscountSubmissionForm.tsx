@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { colleges } from "@/data/mock-data";
 import { Icon } from "./Icon";
 
@@ -26,9 +27,9 @@ export function DiscountSubmissionForm() {
           >
             Submit another discount
           </button>
-          <a className="button secondary-button section-button" href="/">
+          <Link className="button secondary-button section-button" href="/">
             Back to homepage
-          </a>
+          </Link>
         </div>
       </div>
     );

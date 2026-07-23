@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { BenefitCard } from "@/components/BenefitCard";
 import { BusinessCTA } from "@/components/BusinessCTA";
 import { CategoryCard } from "@/components/CategoryCard";
@@ -65,9 +66,9 @@ export default function Home() {
                 <p className="section-kicker">Explore the possibilities</p>
                 <h2 id="popular-heading">Popular nearby discounts</h2>
               </div>
-              <a className="text-link desktop-see-all" href="/discounts">
+              <Link className="text-link desktop-see-all" href="/discounts">
                 See all <Icon name="arrow-right" size={17} />
-              </a>
+              </Link>
             </div>
             <p className="demo-note">
               Featured brands shown as development examples. Offers are not yet
@@ -78,9 +79,9 @@ export default function Home() {
                 <PopularBrandCard key={brand.id} brand={brand} />
               ))}
             </div>
-            <a className="text-link mobile-see-all" href="/discounts">
+            <Link className="text-link mobile-see-all" href="/discounts">
               See all discounts <Icon name="arrow-right" size={17} />
-            </a>
+            </Link>
           </div>
         </section>
 
@@ -131,9 +132,9 @@ export default function Home() {
                   uses mock data and is not an active offer.
                 </p>
               </div>
-              <a className="text-link desktop-see-all" href="/discounts">
+              <Link className="text-link desktop-see-all" href="/discounts">
                 Browse all <Icon name="arrow-right" size={17} />
-              </a>
+              </Link>
             </div>
             <div className="deal-scroll" aria-label="Demo student deals">
               {discounts.map((discount) => (

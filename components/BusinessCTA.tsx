@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Icon } from "./Icon";
 
 export function BusinessCTA() {
@@ -15,9 +16,9 @@ export function BusinessCTA() {
             CampusPerks will let businesses submit, claim, and manage student
             offers—all in one simple place.
           </p>
-          <a className="button button-primary cta-button" href="/for-businesses">
+          <Link className="button button-primary cta-button" href="/for-businesses">
             List Your Business <Icon name="arrow-right" size={18} />
-          </a>
+          </Link>
         </div>
         <div className="business-preview" aria-hidden="true">
           <div className="preview-card preview-card-back">

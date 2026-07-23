@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Icon } from "./Icon";
 
 export function SubmissionCTA() {
@@ -16,9 +17,9 @@ export function SubmissionCTA() {
             campus.
           </p>
         </div>
-        <a className="button button-primary cta-button" href="/submit-discount">
+        <Link className="button button-primary cta-button" href="/submit-discount">
           Submit a Discount <Icon name="arrow-right" size={18} />
-        </a>
+        </Link>
       </div>
     </section>
   );

@@ -71,7 +71,15 @@ export function AuthForm({ mode }: { mode: AuthMode }) {
       if (loginError) {
         setError(loginError.message);
       } else {
-        router.push("/account");
+        const requestedNext = new URLSearchParams(window.location.search).get(
+          "next",
+        );
+        const safeNext =
+          requestedNext?.startsWith("/") && !requestedNext.startsWith("//")
+            ? requestedNext
+            : "/account";
+
+        router.push(safeNext);
         router.refresh();
       }
     }

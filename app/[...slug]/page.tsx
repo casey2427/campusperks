@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Logo } from "@/components/Logo";
 
 const labels: Record<string, { title: string; description: string }> = {
@@ -33,9 +34,9 @@ export default async function PlaceholderPage({
         <span className="placeholder-pill">Coming soon</span>
         <h1>{content.title}</h1>
         <p>{content.description}</p>
-        <a className="button button-primary section-button" href="/">
+        <Link className="button button-primary section-button" href="/">
           Back to homepage
-        </a>
+        </Link>
       </div>
     </main>
   );

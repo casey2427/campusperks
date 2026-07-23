@@ -5,13 +5,41 @@ import type { Discount } from "@/types";
 import { Icon } from "./Icon";
 import { VerificationBadge } from "./VerificationBadge";
 
-export function DealCard({ discount }: { discount: Discount }) {
+type DealCardProps = {
+  discount: Discount;
+  userVote?: -1 | 1;
+  saved?: boolean;
+  busy?: boolean;
+  onVote?: (value: -1 | 1) => void;
+  onSave?: () => void;
+};
+
+export function DealCard({
+  discount,
+  userVote,
+  saved,
+  busy = false,
+  onVote,
+  onSave,
+}: DealCardProps) {
   const [favorite, setFavorite] = useState(false);
+  const isSaved = saved ?? favorite;
+
+  function handleSave() {
+    if (onSave) {
+      onSave();
+      return;
+    }
+
+    setFavorite((value) => !value);
+  }
 
   return (
     <article className="deal-card">
       <div className="deal-visual" style={{ background: discount.accent }}>
-        <span className="deal-demo-label">Demo data</span>
+        {(discount.isDemo ?? true) && (
+          <span className="deal-demo-label">Demo data</span>
+        )}
         <span
           className="business-logo"
           style={{ backgroundColor: discount.business.color }}
@@ -21,13 +49,14 @@ export function DealCard({ discount }: { discount: Discount }) {
         </span>
         <button
           aria-label={
-            favorite
+            isSaved
               ? `Remove ${discount.business.name} from favorites`
               : `Add ${discount.business.name} to favorites`
           }
-          aria-pressed={favorite}
-          className={`favorite-button ${favorite ? "favorite" : ""}`}
-          onClick={() => setFavorite((value) => !value)}
+          aria-pressed={isSaved}
+          className={`favorite-button ${isSaved ? "favorite" : ""}`}
+          disabled={busy}
+          onClick={handleSave}
           type="button"
         >
           <Icon name="heart" size={18} />
@@ -44,6 +73,36 @@ export function DealCard({ discount }: { discount: Discount }) {
         <p className="last-checked">
           <Icon name="clock" size={14} /> Last checked {discount.lastChecked}
         </p>
+        {onVote && (
+          <div className="deal-vote-row" aria-label="Was this discount helpful?">
+            <button
+              aria-pressed={userVote === 1}
+              className={`deal-vote-button helpful ${
+                userVote === 1 ? "active" : ""
+              }`}
+              disabled={busy}
+              onClick={() => onVote(1)}
+              type="button"
+            >
+              <Icon name="thumb-up" size={15} />
+              Helpful
+              <span>{discount.helpfulCount ?? 0}</span>
+            </button>
+            <button
+              aria-pressed={userVote === -1}
+              className={`deal-vote-button not-helpful ${
+                userVote === -1 ? "active" : ""
+              }`}
+              disabled={busy}
+              onClick={() => onVote(-1)}
+              type="button"
+            >
+              <Icon name="thumb-down" size={15} />
+              Not helpful
+              <span>{discount.notHelpfulCount ?? 0}</span>
+            </button>
+          </div>
+        )}
         <a className="button deal-button" href={`/discounts/${discount.id}`}>
           View Deal <Icon name="arrow-right" size={16} />
         </a>
