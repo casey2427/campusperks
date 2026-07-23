@@ -907,6 +907,7 @@ export function CollegeResults({ college }: { college: College }) {
                     busyActions.has(`save:${discount.id}`)
                   }
                   discount={discount}
+                  collegeSlug={college.slug}
                   key={discount.id}
                   onSave={
                     isDatabaseData

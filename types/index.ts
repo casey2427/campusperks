@@ -36,6 +36,10 @@ export interface Discount {
   helpfulCount?: number;
   notHelpfulCount?: number;
   isDemo?: boolean;
+  redemptionInstructions?: string | null;
+  terms?: string | null;
+  verificationConfidence?: number | null;
+  expiresAt?: string | null;
 }
 
 export interface Category {

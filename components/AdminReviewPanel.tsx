@@ -7,7 +7,8 @@ import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { Icon } from "./Icon";
 
 type ReviewStatus = "pending" | "approved" | "rejected";
-type StatusFilter = "all" | ReviewStatus;
+type ReportStatus = "pending" | "resolved" | "dismissed";
+type QueueView = "submissions" | "reports";
 
 type Submission = {
   id: string;
@@ -32,12 +33,60 @@ type CollegeRow = {
   short_name: string;
 };
 
+type DealReport = {
+  id: string;
+  discount_id: string;
+  reported_by: string;
+  reason: string;
+  details: string | null;
+  status: ReportStatus;
+  admin_notes: string | null;
+  created_at: string;
+  reviewed_at: string | null;
+};
+
+type DiscountRow = {
+  id: string;
+  business_id: string;
+  title: string;
+  verification_status: string;
+};
+
+type BusinessRow = {
+  id: string;
+  name: string;
+};
+
+function formatDate(value: string | null) {
+  if (!value) return "recently";
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(new Date(value));
+}
+
+function statusLabel(status: string) {
+  return status.replaceAll("-", " ");
+}
+
 export function AdminReviewPanel() {
   const [user, setUser] = useState<User | null>();
   const [isAdmin, setIsAdmin] = useState(false);
+  const [queueView, setQueueView] = useState<QueueView>("submissions");
   const [submissions, setSubmissions] = useState<Submission[]>([]);
+  const [reports, setReports] = useState<DealReport[]>([]);
   const [colleges, setColleges] = useState<Map<string, CollegeRow>>(new Map());
-  const [filter, setFilter] = useState<StatusFilter>("pending");
+  const [discounts, setDiscounts] = useState<Map<string, DiscountRow>>(new Map());
+  const [businesses, setBusinesses] = useState<Map<string, BusinessRow>>(
+    new Map(),
+  );
+  const [submissionFilter, setSubmissionFilter] = useState<
+    "all" | ReviewStatus
+  >("pending");
+  const [reportFilter, setReportFilter] = useState<"all" | ReportStatus>(
+    "pending",
+  );
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [busyId, setBusyId] = useState("");
   const [loading, setLoading] = useState(true);
@@ -56,7 +105,6 @@ export function AdminReviewPanel() {
       const {
         data: { user: currentUser },
       } = await supabase.auth.getUser();
-
       setUser(currentUser);
 
       if (!currentUser) {
@@ -81,17 +129,12 @@ export function AdminReviewPanel() {
       }
 
       if (!profile?.is_admin) {
-        setIsAdmin(false);
         setLoading(false);
         return;
       }
 
       setIsAdmin(true);
-
-      const [
-        { data: submissionRows, error: queueError },
-        { data: collegeRows },
-      ] = await Promise.all([
+      const [submissionResult, collegeResult, reportResult] = await Promise.all([
         supabase
           .from("discount_submissions")
           .select(
@@ -102,20 +145,67 @@ export function AdminReviewPanel() {
           .from("colleges")
           .select("id, name, short_name")
           .order("name"),
+        supabase
+          .from("deal_reports")
+          .select(
+            "id, discount_id, reported_by, reason, details, status, admin_notes, created_at, reviewed_at",
+          )
+          .order("created_at", { ascending: false }),
       ]);
 
-      if (queueError) {
-        setError(queueError.message);
+      if (submissionResult.error) {
+        setError(submissionResult.error.message);
       } else {
-        setSubmissions((submissionRows as Submission[] | null) ?? []);
-        setColleges(
-          new Map(
-            ((collegeRows as CollegeRow[] | null) ?? []).map((college) => [
-              college.id,
-              college,
-            ]),
-          ),
+        setSubmissions(
+          (submissionResult.data as Submission[] | null) ?? [],
         );
+      }
+      setColleges(
+        new Map(
+          ((collegeResult.data as CollegeRow[] | null) ?? []).map((item) => [
+            item.id,
+            item,
+          ]),
+        ),
+      );
+
+      if (!reportResult.error) {
+        const reportRows =
+          (reportResult.data as DealReport[] | null) ?? [];
+        setReports(reportRows);
+        const discountIds = [
+          ...new Set(reportRows.map((item) => item.discount_id)),
+        ];
+
+        if (discountIds.length > 0) {
+          const { data: discountData } = await supabase
+            .from("discounts")
+            .select("id, business_id, title, verification_status")
+            .in("id", discountIds);
+          const discountRows =
+            (discountData as DiscountRow[] | null) ?? [];
+          setDiscounts(
+            new Map(discountRows.map((item) => [item.id, item])),
+          );
+
+          const businessIds = [
+            ...new Set(discountRows.map((item) => item.business_id)),
+          ];
+          if (businessIds.length > 0) {
+            const { data: businessData } = await supabase
+              .from("businesses")
+              .select("id, name")
+              .in("id", businessIds);
+            setBusinesses(
+              new Map(
+                ((businessData as BusinessRow[] | null) ?? []).map((item) => [
+                  item.id,
+                  item,
+                ]),
+              ),
+            );
+          }
+        }
       }
 
       setLoading(false);
@@ -124,15 +214,7 @@ export function AdminReviewPanel() {
     loadQueue();
   }, []);
 
-  const filteredSubmissions = useMemo(
-    () =>
-      filter === "all"
-        ? submissions
-        : submissions.filter((submission) => submission.status === filter),
-    [filter, submissions],
-  );
-
-  const counts = useMemo(
+  const submissionCounts = useMemo(
     () => ({
       all: submissions.length,
       pending: submissions.filter((item) => item.status === "pending").length,
@@ -141,6 +223,23 @@ export function AdminReviewPanel() {
     }),
     [submissions],
   );
+  const reportCounts = useMemo(
+    () => ({
+      all: reports.length,
+      pending: reports.filter((item) => item.status === "pending").length,
+      resolved: reports.filter((item) => item.status === "resolved").length,
+      dismissed: reports.filter((item) => item.status === "dismissed").length,
+    }),
+    [reports],
+  );
+  const filteredSubmissions =
+    submissionFilter === "all"
+      ? submissions
+      : submissions.filter((item) => item.status === submissionFilter);
+  const filteredReports =
+    reportFilter === "all"
+      ? reports
+      : reports.filter((item) => item.status === reportFilter);
 
   async function reviewSubmission(
     submissionId: string,
@@ -148,7 +247,6 @@ export function AdminReviewPanel() {
   ) {
     const supabase = getSupabaseBrowserClient();
     if (!supabase) return;
-
     setBusyId(submissionId);
     setError("");
 
@@ -163,26 +261,72 @@ export function AdminReviewPanel() {
 
     if (reviewError) {
       setError(reviewError.message);
-      setBusyId("");
-      return;
+    } else {
+      setSubmissions((current) =>
+        current.map((item) =>
+          item.id === submissionId
+            ? {
+                ...item,
+                status: decision,
+                admin_notes: notes[submissionId]?.trim() || null,
+                published_discount_id:
+                  decision === "approved"
+                    ? String(publishedId ?? "")
+                    : item.published_discount_id,
+                reviewed_at: new Date().toISOString(),
+              }
+            : item,
+        ),
+      );
     }
+    setBusyId("");
+  }
 
-    setSubmissions((current) =>
-      current.map((submission) =>
-        submission.id === submissionId
-          ? {
-              ...submission,
-              status: decision,
-              admin_notes: notes[submissionId]?.trim() || null,
-              published_discount_id:
-                decision === "approved"
-                  ? String(publishedId ?? "")
-                  : submission.published_discount_id,
-              reviewed_at: new Date().toISOString(),
-            }
-          : submission,
-      ),
-    );
+  async function reviewReport(
+    reportId: string,
+    decision: "possibly-outdated" | "dismissed",
+  ) {
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase) return;
+    setBusyId(reportId);
+    setError("");
+
+    const { error: reviewError } = await supabase.rpc("review_deal_report", {
+      p_report_id: reportId,
+      p_decision: decision,
+      p_admin_notes: notes[reportId]?.trim() || null,
+    });
+
+    if (reviewError) {
+      setError(reviewError.message);
+    } else {
+      const report = reports.find((item) => item.id === reportId);
+      setReports((current) =>
+        current.map((item) =>
+          item.id === reportId
+            ? {
+                ...item,
+                status: decision === "dismissed" ? "dismissed" : "resolved",
+                admin_notes: notes[reportId]?.trim() || null,
+                reviewed_at: new Date().toISOString(),
+              }
+            : item,
+        ),
+      );
+      if (decision === "possibly-outdated" && report) {
+        setDiscounts((current) => {
+          const next = new Map(current);
+          const discount = next.get(report.discount_id);
+          if (discount) {
+            next.set(report.discount_id, {
+              ...discount,
+              verification_status: "possibly-outdated",
+            });
+          }
+          return next;
+        });
+      }
+    }
     setBusyId("");
   }
 
@@ -217,10 +361,7 @@ export function AdminReviewPanel() {
           <Icon name="shield" size={27} />
         </span>
         <h1>Administrator access required</h1>
-        <p>
-          This page is private. If this is your account, finish the one-time
-          admin setup in Supabase.
-        </p>
+        <p>This page is private and restricted to CampusPerks administrators.</p>
         {error && (
           <p className="form-error-message" role="alert">
             {error}
@@ -240,8 +381,8 @@ export function AdminReviewPanel() {
           <span className="eyebrow">Private administrator area</span>
           <h1>Discount review queue</h1>
           <p>
-            Approve accurate submissions before they appear in public college
-            results. Rejected submissions remain recorded for accountability.
+            Review new submissions and community reports before public listings
+            change.
           </p>
         </div>
         <Link className="button secondary-button" href="/account">
@@ -249,36 +390,23 @@ export function AdminReviewPanel() {
         </Link>
       </div>
 
-      <div className="admin-summary-grid">
-        <div>
-          <span>Waiting for review</span>
-          <strong>{counts.pending}</strong>
-        </div>
-        <div>
-          <span>Approved</span>
-          <strong>{counts.approved}</strong>
-        </div>
-        <div>
-          <span>Rejected</span>
-          <strong>{counts.rejected}</strong>
-        </div>
-      </div>
-
-      <div className="admin-filter-tabs" aria-label="Filter submissions">
-        {(["pending", "approved", "rejected", "all"] as StatusFilter[]).map(
-          (status) => (
-            <button
-              aria-pressed={filter === status}
-              className={filter === status ? "active" : ""}
-              key={status}
-              onClick={() => setFilter(status)}
-              type="button"
-            >
-              {status.charAt(0).toUpperCase() + status.slice(1)}
-              <span>{counts[status]}</span>
-            </button>
-          ),
-        )}
+      <div className="admin-queue-switcher" aria-label="Choose review queue">
+        <button
+          className={queueView === "submissions" ? "active" : ""}
+          onClick={() => setQueueView("submissions")}
+          type="button"
+        >
+          Discount submissions
+          <span>{submissionCounts.pending}</span>
+        </button>
+        <button
+          className={queueView === "reports" ? "active" : ""}
+          onClick={() => setQueueView("reports")}
+          type="button"
+        >
+          Outdated reports
+          <span>{reportCounts.pending}</span>
+        </button>
       </div>
 
       {error && (
@@ -287,157 +415,360 @@ export function AdminReviewPanel() {
         </div>
       )}
 
-      {filteredSubmissions.length > 0 ? (
-        <div className="admin-submission-list">
-          {filteredSubmissions.map((submission) => {
-            const college = colleges.get(submission.college_id);
-            const isBusy = busyId === submission.id;
+      {queueView === "submissions" ? (
+        <>
+          <div className="admin-summary-grid">
+            <div>
+              <span>Waiting for review</span>
+              <strong>{submissionCounts.pending}</strong>
+            </div>
+            <div>
+              <span>Approved</span>
+              <strong>{submissionCounts.approved}</strong>
+            </div>
+            <div>
+              <span>Rejected</span>
+              <strong>{submissionCounts.rejected}</strong>
+            </div>
+          </div>
+          <div className="admin-filter-tabs" aria-label="Filter submissions">
+            {(
+              ["pending", "approved", "rejected", "all"] as const
+            ).map((status) => (
+              <button
+                aria-pressed={submissionFilter === status}
+                className={submissionFilter === status ? "active" : ""}
+                key={status}
+                onClick={() => setSubmissionFilter(status)}
+                type="button"
+              >
+                {status.charAt(0).toUpperCase() + status.slice(1)}
+                <span>{submissionCounts[status]}</span>
+              </button>
+            ))}
+          </div>
 
-            return (
-              <article className="admin-submission-card" key={submission.id}>
-                <div className="admin-submission-top">
-                  <div>
-                    <span
-                      className={`admin-status-badge status-${submission.status}`}
-                    >
-                      {submission.status}
-                    </span>
-                    <span className="admin-submission-date">
-                      Submitted{" "}
-                      {new Intl.DateTimeFormat("en-US", {
-                        month: "short",
-                        day: "numeric",
-                        year: "numeric",
-                      }).format(new Date(submission.created_at))}
-                    </span>
-                  </div>
-                  <span className="admin-college-pill">
-                    {college?.short_name ?? "College"}
-                  </span>
-                </div>
-
-                <div className="admin-submission-title">
-                  <span
-                    className="business-logo"
-                    aria-hidden="true"
-                    style={{ backgroundColor: "#6652df" }}
+          {filteredSubmissions.length > 0 ? (
+            <div className="admin-submission-list">
+              {filteredSubmissions.map((submission) => {
+                const college = colleges.get(submission.college_id);
+                const isBusy = busyId === submission.id;
+                return (
+                  <article
+                    className="admin-submission-card"
+                    key={submission.id}
                   >
-                    {submission.business_name
-                      .split(/\s+/)
-                      .map((word) => word[0])
-                      .join("")
-                      .slice(0, 2)
-                      .toUpperCase()}
-                  </span>
-                  <div>
-                    <h2>{submission.business_name}</h2>
-                    <p>{submission.discount_title}</p>
-                  </div>
-                </div>
-
-                <dl className="admin-submission-details">
-                  <div>
-                    <dt>College</dt>
-                    <dd>{college?.name ?? "Unknown college"}</dd>
-                  </div>
-                  <div>
-                    <dt>Category</dt>
-                    <dd>{submission.category}</dd>
-                  </div>
-                  <div>
-                    <dt>Address</dt>
-                    <dd>{submission.address}</dd>
-                  </div>
-                  <div>
-                    <dt>Source</dt>
-                    <dd>{submission.source}</dd>
-                  </div>
-                  {submission.notes && (
-                    <div className="admin-detail-full">
-                      <dt>Student notes</dt>
-                      <dd>{submission.notes}</dd>
+                    <div className="admin-submission-top">
+                      <div>
+                        <span
+                          className={`admin-status-badge status-${submission.status}`}
+                        >
+                          {submission.status}
+                        </span>
+                        <span className="admin-submission-date">
+                          Submitted {formatDate(submission.created_at)}
+                        </span>
+                      </div>
+                      <span className="admin-college-pill">
+                        {college?.short_name ?? "College"}
+                      </span>
                     </div>
-                  )}
-                </dl>
-
-                {submission.status === "pending" ? (
-                  <>
-                    <label className="admin-notes-field">
-                      <span>Private review notes (optional)</span>
-                      <textarea
-                        onChange={(event) =>
+                    <div className="admin-submission-title">
+                      <span
+                        className="business-logo"
+                        aria-hidden="true"
+                        style={{ backgroundColor: "#6652df" }}
+                      >
+                        {submission.business_name
+                          .split(/\s+/)
+                          .map((word) => word[0])
+                          .join("")
+                          .slice(0, 2)
+                          .toUpperCase()}
+                      </span>
+                      <div>
+                        <h2>{submission.business_name}</h2>
+                        <p>{submission.discount_title}</p>
+                      </div>
+                    </div>
+                    <dl className="admin-submission-details">
+                      <div>
+                        <dt>College</dt>
+                        <dd>{college?.name ?? "Unknown college"}</dd>
+                      </div>
+                      <div>
+                        <dt>Category</dt>
+                        <dd>{submission.category}</dd>
+                      </div>
+                      <div>
+                        <dt>Address</dt>
+                        <dd>{submission.address}</dd>
+                      </div>
+                      <div>
+                        <dt>Source</dt>
+                        <dd>{submission.source}</dd>
+                      </div>
+                      {submission.notes && (
+                        <div className="admin-detail-full">
+                          <dt>Student notes</dt>
+                          <dd>{submission.notes}</dd>
+                        </div>
+                      )}
+                    </dl>
+                    {submission.status === "pending" ? (
+                      <ReviewControls
+                        busy={isBusy}
+                        note={notes[submission.id] ?? ""}
+                        onChange={(value) =>
                           setNotes((current) => ({
                             ...current,
-                            [submission.id]: event.target.value,
+                            [submission.id]: value,
                           }))
                         }
-                        placeholder="Add why this was approved or rejected."
-                        rows={3}
-                        value={notes[submission.id] ?? ""}
-                      />
-                    </label>
-                    <div className="admin-review-actions">
-                      <button
-                        className="button admin-reject-button"
-                        disabled={isBusy}
-                        onClick={() =>
-                          reviewSubmission(submission.id, "rejected")
-                        }
-                        type="button"
-                      >
-                        Reject
-                      </button>
-                      <button
-                        className="button button-primary"
-                        disabled={isBusy}
-                        onClick={() =>
+                        onPrimary={() =>
                           reviewSubmission(submission.id, "approved")
                         }
-                        type="button"
-                      >
-                        {isBusy ? "Saving…" : "Approve and Publish"}
-                        {!isBusy && <Icon name="check" size={16} />}
-                      </button>
-                    </div>
-                  </>
-                ) : (
-                  <div className="admin-reviewed-footer">
-                    <span>
-                      Reviewed{" "}
-                      {submission.reviewed_at
-                        ? new Intl.DateTimeFormat("en-US", {
-                            month: "short",
-                            day: "numeric",
-                            year: "numeric",
-                          }).format(new Date(submission.reviewed_at))
-                        : "recently"}
-                    </span>
-                    {submission.published_discount_id && (
-                      <Link
-                        href={`/discounts/${submission.published_discount_id}`}
-                      >
-                        Open listing <Icon name="arrow-right" size={14} />
-                      </Link>
+                        onSecondary={() =>
+                          reviewSubmission(submission.id, "rejected")
+                        }
+                        primaryLabel="Approve and Publish"
+                        secondaryLabel="Reject"
+                      />
+                    ) : (
+                      <div className="admin-reviewed-footer">
+                        <span>Reviewed {formatDate(submission.reviewed_at)}</span>
+                        {submission.published_discount_id && (
+                          <Link
+                            href={`/discounts/${submission.published_discount_id}`}
+                          >
+                            Open listing <Icon name="arrow-right" size={14} />
+                          </Link>
+                        )}
+                      </div>
                     )}
-                  </div>
-                )}
-              </article>
-            );
-          })}
-        </div>
+                  </article>
+                );
+              })}
+            </div>
+          ) : (
+            <EmptyQueue
+              filter={submissionFilter}
+              noun="submissions"
+            />
+          )}
+        </>
       ) : (
-        <div className="admin-empty-state">
-          <span>
-            <Icon name="check" size={27} />
-          </span>
-          <h2>No {filter === "all" ? "" : filter} submissions</h2>
-          <p>
-            {filter === "pending"
-              ? "The review queue is clear."
-              : "Submissions with this status will appear here."}
-          </p>
-        </div>
+        <>
+          <div className="admin-summary-grid">
+            <div>
+              <span>Waiting for review</span>
+              <strong>{reportCounts.pending}</strong>
+            </div>
+            <div>
+              <span>Marked outdated</span>
+              <strong>{reportCounts.resolved}</strong>
+            </div>
+            <div>
+              <span>Dismissed</span>
+              <strong>{reportCounts.dismissed}</strong>
+            </div>
+          </div>
+          <div className="admin-filter-tabs" aria-label="Filter reports">
+            {(
+              ["pending", "resolved", "dismissed", "all"] as const
+            ).map((status) => (
+              <button
+                aria-pressed={reportFilter === status}
+                className={reportFilter === status ? "active" : ""}
+                key={status}
+                onClick={() => setReportFilter(status)}
+                type="button"
+              >
+                {status === "resolved"
+                  ? "Marked outdated"
+                  : status.charAt(0).toUpperCase() + status.slice(1)}
+                <span>{reportCounts[status]}</span>
+              </button>
+            ))}
+          </div>
+
+          {filteredReports.length > 0 ? (
+            <div className="admin-submission-list">
+              {filteredReports.map((report) => {
+                const discount = discounts.get(report.discount_id);
+                const business = discount
+                  ? businesses.get(discount.business_id)
+                  : undefined;
+                const isBusy = busyId === report.id;
+                return (
+                  <article className="admin-submission-card" key={report.id}>
+                    <div className="admin-submission-top">
+                      <div>
+                        <span
+                          className={`admin-status-badge status-${report.status}`}
+                        >
+                          {statusLabel(report.status)}
+                        </span>
+                        <span className="admin-submission-date">
+                          Reported {formatDate(report.created_at)}
+                        </span>
+                      </div>
+                      <Link
+                        className="admin-open-deal"
+                        href={`/discounts/${report.discount_id}`}
+                      >
+                        Open deal <Icon name="arrow-right" size={14} />
+                      </Link>
+                    </div>
+                    <div className="admin-submission-title">
+                      <span
+                        className="business-logo"
+                        aria-hidden="true"
+                        style={{ backgroundColor: "#6652df" }}
+                      >
+                        {(business?.name ?? "Deal")
+                          .split(/\s+/)
+                          .map((word) => word[0])
+                          .join("")
+                          .slice(0, 2)
+                          .toUpperCase()}
+                      </span>
+                      <div>
+                        <h2>{business?.name ?? "Discount listing"}</h2>
+                        <p>{discount?.title ?? "Listing details unavailable"}</p>
+                      </div>
+                    </div>
+                    <dl className="admin-submission-details">
+                      <div>
+                        <dt>Report reason</dt>
+                        <dd>{report.reason}</dd>
+                      </div>
+                      <div>
+                        <dt>Current status</dt>
+                        <dd>
+                          {statusLabel(
+                            discount?.verification_status ?? "unknown",
+                          )}
+                        </dd>
+                      </div>
+                      {report.details && (
+                        <div className="admin-detail-full">
+                          <dt>Student details</dt>
+                          <dd>{report.details}</dd>
+                        </div>
+                      )}
+                    </dl>
+                    {report.status === "pending" ? (
+                      <ReviewControls
+                        busy={isBusy}
+                        note={notes[report.id] ?? ""}
+                        onChange={(value) =>
+                          setNotes((current) => ({
+                            ...current,
+                            [report.id]: value,
+                          }))
+                        }
+                        onPrimary={() =>
+                          reviewReport(report.id, "possibly-outdated")
+                        }
+                        onSecondary={() =>
+                          reviewReport(report.id, "dismissed")
+                        }
+                        primaryLabel="Mark Possibly Outdated"
+                        secondaryLabel="Dismiss Report"
+                      />
+                    ) : (
+                      <div className="admin-reviewed-footer">
+                        <span>Reviewed {formatDate(report.reviewed_at)}</span>
+                        <span>
+                          {report.status === "resolved"
+                            ? "Listing kept online with an outdated warning"
+                            : "Listing left unchanged"}
+                        </span>
+                      </div>
+                    )}
+                  </article>
+                );
+              })}
+            </div>
+          ) : (
+            <EmptyQueue filter={reportFilter} noun="reports" />
+          )}
+        </>
       )}
+    </div>
+  );
+}
+
+function ReviewControls({
+  busy,
+  note,
+  onChange,
+  onPrimary,
+  onSecondary,
+  primaryLabel,
+  secondaryLabel,
+}: {
+  busy: boolean;
+  note: string;
+  onChange: (value: string) => void;
+  onPrimary: () => void;
+  onSecondary: () => void;
+  primaryLabel: string;
+  secondaryLabel: string;
+}) {
+  return (
+    <>
+      <label className="admin-notes-field">
+        <span>Private review notes (optional)</span>
+        <textarea
+          onChange={(event) => onChange(event.target.value)}
+          placeholder="Add the evidence or reason behind this decision."
+          rows={3}
+          value={note}
+        />
+      </label>
+      <div className="admin-review-actions">
+        <button
+          className="button admin-reject-button"
+          disabled={busy}
+          onClick={onSecondary}
+          type="button"
+        >
+          {secondaryLabel}
+        </button>
+        <button
+          className="button button-primary"
+          disabled={busy}
+          onClick={onPrimary}
+          type="button"
+        >
+          {busy ? "Saving…" : primaryLabel}
+          {!busy && <Icon name="check" size={16} />}
+        </button>
+      </div>
+    </>
+  );
+}
+
+function EmptyQueue({
+  filter,
+  noun,
+}: {
+  filter: string;
+  noun: string;
+}) {
+  return (
+    <div className="admin-empty-state">
+      <span>
+        <Icon name="check" size={27} />
+      </span>
+      <h2>No {filter === "all" ? "" : statusLabel(filter)} {noun}</h2>
+      <p>
+        {filter === "pending"
+          ? "The review queue is clear."
+          : `Items with this status will appear here.`}
+      </p>
     </div>
   );
 }

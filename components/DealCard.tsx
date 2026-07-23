@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import type { Discount } from "@/types";
 import { Icon } from "./Icon";
 import { VerificationBadge } from "./VerificationBadge";
@@ -12,6 +13,7 @@ type DealCardProps = {
   busy?: boolean;
   onVote?: (value: -1 | 1) => void;
   onSave?: () => void;
+  collegeSlug?: string;
 };
 
 export function DealCard({
@@ -21,6 +23,7 @@ export function DealCard({
   busy = false,
   onVote,
   onSave,
+  collegeSlug,
 }: DealCardProps) {
   const [favorite, setFavorite] = useState(false);
   const isSaved = saved ?? favorite;
@@ -33,6 +36,10 @@ export function DealCard({
 
     setFavorite((value) => !value);
   }
+
+  const dealHref = collegeSlug
+    ? `/discounts/${discount.id}?college=${collegeSlug}`
+    : `/discounts/${discount.id}`;
 
   return (
     <article className="deal-card">
@@ -103,12 +110,12 @@ export function DealCard({
             </button>
           </div>
         )}
-        <a className="button deal-button" href={`/discounts/${discount.id}`}>
+        <Link className="button deal-button" href={dealHref}>
           View Deal <Icon name="arrow-right" size={16} />
-        </a>
-        <a className="report-link" href={`/report/${discount.id}`}>
+        </Link>
+        <Link className="report-link" href={`${dealHref}#report-deal`}>
           <Icon name="flag" size={13} /> Report outdated deal
-        </a>
+        </Link>
       </div>
     </article>
   );
