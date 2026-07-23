@@ -8,6 +8,14 @@ import {
   getSupabaseBrowserClient,
   isSupabaseConfigured,
 } from "@/lib/supabase/client";
+import {
+  clearNearbyLocation,
+  distanceBetweenMiles,
+  findNearestCollege,
+  readNearbyLocation,
+  saveNearbyLocation,
+  type NearbyLocation,
+} from "@/lib/location";
 import type {
   Business,
   College,
@@ -17,7 +25,12 @@ import type {
 import { DealCard } from "./DealCard";
 import { Icon } from "./Icon";
 
-type SortOption = "recommended" | "distance" | "recent" | "business";
+type SortOption =
+  | "recommended"
+  | "distance"
+  | "helpful"
+  | "recent"
+  | "business";
 type DataSource = "loading" | "database" | "mock";
 
 type DbCollege = {
@@ -63,11 +76,11 @@ const verificationOptions = Object.entries(verificationLabels) as [
 ][];
 
 const verificationWeights: Record<VerificationStatus, number> = {
-  "business-verified": 50,
-  "official-source": 45,
-  "student-confirmed": 35,
-  "pending-review": 10,
-  "possibly-outdated": -40,
+  "business-verified": 45,
+  "official-source": 42,
+  "student-confirmed": 30,
+  "pending-review": 12,
+  "possibly-outdated": -100,
 };
 
 const businessColors = [
@@ -137,14 +150,26 @@ function recommendedScore(discount: Discount) {
   const daysSinceCheck = Number.isNaN(checkedAt)
     ? Number.POSITIVE_INFINITY
     : Math.max(0, (Date.now() - checkedAt) / 86_400_000);
-  const recencyPoints = daysSinceCheck <= 7 ? 20 : daysSinceCheck <= 30 ? 10 : 0;
+  const recencyPoints = daysSinceCheck <= 7 ? 10 : daysSinceCheck <= 30 ? 5 : 0;
+  const feedbackSignal =
+    (discount.helpfulCount ?? 0) - (discount.notHelpfulCount ?? 0) * 1.5;
+  const feedbackPoints = Math.max(-25, Math.min(25, feedbackSignal * 2));
+  const distance = distanceValue(discount.distance);
+  const distancePoints = Number.isFinite(distance)
+    ? Math.max(0, 20 - distance * 5)
+    : 0;
 
   return (
     verificationWeights[discount.verificationStatus] +
-    (discount.helpfulCount ?? 0) * 3 -
-    (discount.notHelpfulCount ?? 0) * 4 +
-    recencyPoints -
-    distanceValue(discount.distance) * 2
+    feedbackPoints +
+    distancePoints +
+    recencyPoints
+  );
+}
+
+function helpfulScore(discount: Discount) {
+  return (
+    (discount.helpfulCount ?? 0) - (discount.notHelpfulCount ?? 0) * 1.5
   );
 }
 
@@ -164,6 +189,18 @@ export function CollegeResults({ college }: { college: College }) {
   const [category, setCategory] = useState("All");
   const [verification, setVerification] = useState("all");
   const [sort, setSort] = useState<SortOption>("recommended");
+  const [nearbyLocation, setNearbyLocation] =
+    useState<NearbyLocation | null>(null);
+  const [locationError, setLocationError] = useState("");
+  const [locating, setLocating] = useState(false);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setNearbyLocation(readNearbyLocation());
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [college.slug]);
 
   useEffect(() => {
     let isActive = true;
@@ -376,6 +413,13 @@ export function CollegeResults({ college }: { college: College }) {
           );
         }
 
+        if (sort === "helpful") {
+          return (
+            helpfulScore(b) - helpfulScore(a) ||
+            recommendedScore(b) - recommendedScore(a)
+          );
+        }
+
         if (sort === "business") {
           return a.business.name.localeCompare(b.business.name);
         }
@@ -399,6 +443,62 @@ export function CollegeResults({ college }: { college: College }) {
 
   function requireLogin() {
     router.push(`/login?next=/colleges/${college.slug}`);
+  }
+
+  function requestNearbyLocation() {
+    setLocationError("");
+    setLocating(true);
+
+    if (!navigator.geolocation) {
+      setLocationError("Location is not supported in this browser.");
+      setLocating(false);
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const location: NearbyLocation = {
+          latitude: Number(position.coords.latitude.toFixed(4)),
+          longitude: Number(position.coords.longitude.toFixed(4)),
+          detectedAt: Date.now(),
+        };
+        const nearest = findNearestCollege(location, colleges);
+
+        if (!nearest || nearest.distance > 100) {
+          setLocationError(
+            nearest
+              ? `CampusPerks isn’t near your area yet. ${nearest.college.shortName} is the closest supported school.`
+              : "We couldn’t find a supported college near you.",
+          );
+          setLocating(false);
+          return;
+        }
+
+        saveNearbyLocation(location);
+        setNearbyLocation(location);
+        setSort("recommended");
+        setLocating(false);
+
+        if (nearest.college.slug !== college.slug) {
+          router.push(`/colleges/${nearest.college.slug}`);
+        }
+      },
+      (locationRequestError) => {
+        setLocationError(
+          locationRequestError.code === locationRequestError.PERMISSION_DENIED
+            ? "Location permission was denied. Campus-distance sorting is still available."
+            : "We couldn’t detect your location. Campus-distance sorting is still available.",
+        );
+        setLocating(false);
+      },
+      { enableHighAccuracy: false, maximumAge: 300_000, timeout: 10_000 },
+    );
+  }
+
+  function stopUsingNearbyLocation() {
+    clearNearbyLocation();
+    setNearbyLocation(null);
+    setLocationError("");
   }
 
   function setBusy(key: string, busy: boolean) {
@@ -517,6 +617,9 @@ export function CollegeResults({ college }: { college: College }) {
 
   const isDatabaseData = dataSource === "database";
   const allDealsAreDemo = deals.length > 0 && deals.every((deal) => deal.isDemo);
+  const distanceToCampus = nearbyLocation
+    ? distanceBetweenMiles(nearbyLocation, college)
+    : null;
 
   return (
     <>
@@ -575,6 +678,59 @@ export function CollegeResults({ college }: { college: College }) {
         aria-labelledby="deal-results-heading"
       >
         <div className="container">
+          {nearbyLocation ? (
+            <div className="college-nearby-banner">
+              <span className="college-nearby-icon">
+                <Icon name="navigation" size={18} />
+              </span>
+              <div>
+                <strong>Recommended near you is active</strong>
+                <span>
+                  {distanceToCampus !== null
+                    ? `You’re approximately ${
+                        distanceToCampus < 1
+                          ? "less than 1"
+                          : Math.round(distanceToCampus)
+                      } mile${distanceToCampus >= 1.5 ? "s" : ""} from ${
+                        college.shortName
+                      }. `
+                    : ""}
+                  Your exact location is kept only for this browser session.
+                </span>
+              </div>
+              <button onClick={stopUsingNearbyLocation} type="button">
+                Turn off
+              </button>
+            </div>
+          ) : (
+            <div className="college-nearby-prompt">
+              <span className="college-nearby-icon">
+                <Icon name="navigation" size={18} />
+              </span>
+              <div>
+                <strong>Rank deals around your closest campus</strong>
+                <span>
+                  Use your location to select the nearest supported college.
+                  CampusPerks does not permanently store it.
+                </span>
+              </div>
+              <button
+                disabled={locating}
+                onClick={requestNearbyLocation}
+                type="button"
+              >
+                {locating ? "Detecting…" : "Use my location"}
+              </button>
+            </div>
+          )}
+
+          {locationError && (
+            <div className="college-data-message warning" role="alert">
+              <Icon name="flag" size={17} />
+              <span>{locationError}</span>
+            </div>
+          )}
+
           {loadError && (
             <div className="college-data-message warning" role="alert">
               <Icon name="flag" size={17} />
@@ -681,10 +837,11 @@ export function CollegeResults({ college }: { college: College }) {
                 onChange={(event) => setSort(event.target.value as SortOption)}
                 value={sort}
               >
-                <option value="recommended">Recommended</option>
-                <option value="distance">Distance</option>
-                <option value="recent">Recently checked</option>
-                <option value="business">Business name</option>
+                <option value="recommended">Recommended near you</option>
+                <option value="distance">Closest to campus</option>
+                <option value="helpful">Most helpful</option>
+                <option value="recent">Recently verified</option>
+                <option value="business">Business A–Z</option>
               </select>
             </div>
 
@@ -698,6 +855,21 @@ export function CollegeResults({ college }: { college: College }) {
               </button>
             )}
           </div>
+
+          {sort === "recommended" && (
+            <div className="ranking-explainer" aria-label="How ranking works">
+              <span>
+                <Icon name="sparkles" size={15} />
+                How Recommended near you ranks deals
+              </span>
+              <ul>
+                <li>Verified evidence <strong>45%</strong></li>
+                <li>Student feedback <strong>25%</strong></li>
+                <li>Campus distance <strong>20%</strong></li>
+                <li>Recently checked <strong>10%</strong></li>
+              </ul>
+            </div>
+          )}
 
           <div className="college-results-count">
             <div>

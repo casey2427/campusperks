@@ -500,6 +500,11 @@ a {
   background: rgba(244, 241, 255, 0.84);
 }
 
+.location-button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
 .location-icon {
   display: inline-flex;
   width: 27px;
@@ -1552,6 +1557,88 @@ a {
   color: #8a613b;
 }
 
+.college-nearby-banner,
+.college-nearby-prompt {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 13px;
+  margin-bottom: 16px;
+  padding: 14px 16px;
+  border: 1px solid #dcd7fb;
+  border-radius: 15px;
+  background:
+    radial-gradient(circle at 85% 20%, rgba(207, 197, 255, 0.28), transparent 28%),
+    linear-gradient(135deg, #f9f7ff, #f5f9ff);
+  box-shadow: 0 8px 24px rgba(62, 50, 135, 0.045);
+}
+
+.college-nearby-prompt {
+  border-color: #e2e2ec;
+  background: #fbfbfe;
+}
+
+.college-nearby-icon {
+  display: inline-flex;
+  width: 40px;
+  height: 40px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  background: #ece8ff;
+  color: #6049df;
+}
+
+.college-nearby-banner > div,
+.college-nearby-prompt > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.college-nearby-banner strong,
+.college-nearby-prompt strong {
+  color: #34394a;
+  font-size: 11px;
+}
+
+.college-nearby-banner div span,
+.college-nearby-prompt div span {
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.55;
+}
+
+.college-nearby-banner > button,
+.college-nearby-prompt > button {
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid #d8d3f5;
+  border-radius: 10px;
+  background: #fff;
+  color: #5e4bd2;
+  font-size: 9px;
+  font-weight: 720;
+  cursor: pointer;
+}
+
+.college-nearby-banner > button:hover,
+.college-nearby-prompt > button:hover {
+  border-color: #bfb5f6;
+}
+
+.college-nearby-prompt > button {
+  border-color: #6550e7;
+  background: #6550e7;
+  color: #fff;
+}
+
+.college-nearby-prompt > button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
 .college-results-toolbar {
   display: grid;
   grid-template-columns: minmax(240px, 0.75fr) minmax(300px, 1.25fr);
@@ -1717,6 +1804,55 @@ a {
 
 .clear-results-filters:hover {
   text-decoration: underline;
+}
+
+.ranking-explainer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid #e5e2f4;
+  border-radius: 13px;
+  background: #faf9ff;
+}
+
+.ranking-explainer > span {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 7px;
+  color: #5d50a4;
+  font-size: 9px;
+  font-weight: 720;
+}
+
+.ranking-explainer > span svg {
+  color: #7058ec;
+}
+
+.ranking-explainer ul {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ranking-explainer li {
+  padding: 6px 8px;
+  border-radius: 999px;
+  background: #fff;
+  color: #777d8d;
+  font-size: 8px;
+  white-space: nowrap;
+}
+
+.ranking-explainer li strong {
+  color: #5f4cdc;
 }
 
 .college-results-count {
@@ -3686,6 +3822,15 @@ a {
     grid-template-columns: 1fr;
     padding: 14px;
   }
+  .college-nearby-banner,
+  .college-nearby-prompt {
+    grid-template-columns: auto 1fr;
+  }
+  .college-nearby-banner > button,
+  .college-nearby-prompt > button {
+    width: 100%;
+    grid-column: 1 / -1;
+  }
   .college-filter-row {
     align-items: stretch;
     flex-direction: column;
@@ -3695,6 +3840,16 @@ a {
   }
   .clear-results-filters {
     align-self: flex-start;
+  }
+  .ranking-explainer {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .ranking-explainer ul {
+    width: 100%;
+    align-items: stretch;
+    flex-wrap: wrap;
+    justify-content: flex-start;
   }
   .college-results-count {
     align-items: flex-start;

@@ -8,16 +8,16 @@ import type {
 } from "@/types";
 
 export const colleges: College[] = [
-  { id: "ucla", name: "University of California, Los Angeles", shortName: "UCLA", slug: "ucla", location: "Los Angeles, CA" },
-  { id: "usc", name: "University of Southern California", shortName: "USC", slug: "university-of-southern-california", location: "Los Angeles, CA" },
-  { id: "bu", name: "Boston University", shortName: "BU", slug: "boston-university", location: "Boston, MA" },
-  { id: "nyu", name: "New York University", shortName: "NYU", slug: "new-york-university", location: "New York, NY" },
-  { id: "uta", name: "University of Texas at Austin", shortName: "UT Austin", slug: "university-of-texas-at-austin", location: "Austin, TX" },
-  { id: "asu", name: "Arizona State University", shortName: "ASU", slug: "arizona-state-university", location: "Tempe, AZ" },
-  { id: "uci", name: "University of California, Irvine", shortName: "UC Irvine", slug: "university-of-california-irvine", location: "Irvine, CA" },
-  { id: "umich", name: "University of Michigan", shortName: "Michigan", slug: "university-of-michigan", location: "Ann Arbor, MI" },
-  { id: "osu", name: "Ohio State University", shortName: "Ohio State", slug: "ohio-state-university", location: "Columbus, OH" },
-  { id: "uf", name: "University of Florida", shortName: "UF", slug: "university-of-florida", location: "Gainesville, FL" },
+  { id: "ucla", name: "University of California, Los Angeles", shortName: "UCLA", slug: "ucla", location: "Los Angeles, CA", latitude: 34.0689, longitude: -118.4452 },
+  { id: "usc", name: "University of Southern California", shortName: "USC", slug: "university-of-southern-california", location: "Los Angeles, CA", latitude: 34.0224, longitude: -118.2851 },
+  { id: "bu", name: "Boston University", shortName: "BU", slug: "boston-university", location: "Boston, MA", latitude: 42.3505, longitude: -71.1054 },
+  { id: "nyu", name: "New York University", shortName: "NYU", slug: "new-york-university", location: "New York, NY", latitude: 40.7295, longitude: -73.9965 },
+  { id: "uta", name: "University of Texas at Austin", shortName: "UT Austin", slug: "university-of-texas-at-austin", location: "Austin, TX", latitude: 30.2849, longitude: -97.7341 },
+  { id: "asu", name: "Arizona State University", shortName: "ASU", slug: "arizona-state-university", location: "Tempe, AZ", latitude: 33.4215, longitude: -111.9332 },
+  { id: "uci", name: "University of California, Irvine", shortName: "UC Irvine", slug: "university-of-california-irvine", location: "Irvine, CA", latitude: 33.6405, longitude: -117.8443 },
+  { id: "umich", name: "University of Michigan", shortName: "Michigan", slug: "university-of-michigan", location: "Ann Arbor, MI", latitude: 42.278, longitude: -83.7382 },
+  { id: "osu", name: "Ohio State University", shortName: "Ohio State", slug: "ohio-state-university", location: "Columbus, OH", latitude: 40.0067, longitude: -83.0305 },
+  { id: "uf", name: "University of Florida", shortName: "UF", slug: "university-of-florida", location: "Gainesville, FL", latitude: 29.6436, longitude: -82.3549 },
 ];
 
 export const brands: Brand[] = [

@@ -3,6 +3,11 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { colleges } from "@/data/mock-data";
+import {
+  findNearestCollege,
+  saveNearbyLocation,
+  type NearbyLocation,
+} from "@/lib/location";
 import type { College } from "@/types";
 import { CollegeAutocomplete } from "./CollegeAutocomplete";
 import { Icon } from "./Icon";
@@ -18,6 +23,7 @@ export function CollegeSearch() {
   const [filtered, setFiltered] = useState<College[]>(colleges);
   const [locationMessage, setLocationMessage] = useState("");
   const [locationError, setLocationError] = useState(false);
+  const [locating, setLocating] = useState(false);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -76,23 +82,56 @@ export function CollegeSearch() {
   const useLocation = () => {
     setLocationMessage("Requesting your location…");
     setLocationError(false);
+    setLocating(true);
     if (!navigator.geolocation) {
       setLocationError(true);
       setLocationMessage("Location is not supported in this browser.");
+      setLocating(false);
       return;
     }
     navigator.geolocation.getCurrentPosition(
-      () => {
+      (position) => {
+        const nearbyLocation: NearbyLocation = {
+          latitude: Number(position.coords.latitude.toFixed(4)),
+          longitude: Number(position.coords.longitude.toFixed(4)),
+          detectedAt: Date.now(),
+        };
+        const nearest = findNearestCollege(nearbyLocation, colleges);
+
+        if (!nearest) {
+          setLocationError(true);
+          setLocationMessage("We couldn’t find a supported college near you.");
+          setLocating(false);
+          return;
+        }
+
+        if (nearest.distance > 100) {
+          setLocationError(true);
+          setLocationMessage(
+            `CampusPerks isn’t near your area yet. The closest supported school is ${nearest.college.shortName}, about ${Math.round(nearest.distance)} miles away.`,
+          );
+          setLocating(false);
+          return;
+        }
+
+        saveNearbyLocation(nearbyLocation);
         setLocationError(false);
-        setLocationMessage("Location detected. Finding colleges near you.");
+        setLocationMessage(
+          `Location detected. Opening recommended deals near ${nearest.college.shortName}.`,
+        );
+        setLocating(false);
+        router.push(`/colleges/${nearest.college.slug}`);
       },
-      () => {
+      (locationRequestError) => {
         setLocationError(true);
         setLocationMessage(
-          "We couldn’t access your location. You can still search by college name.",
+          locationRequestError.code === locationRequestError.PERMISSION_DENIED
+            ? "Location permission was denied. You can still search by college name."
+            : "We couldn’t detect your location. You can still search by college name.",
         );
+        setLocating(false);
       },
-      { enableHighAccuracy: false, timeout: 8000 },
+      { enableHighAccuracy: false, maximumAge: 300_000, timeout: 10_000 },
     );
   };
 
@@ -160,11 +199,16 @@ export function CollegeSearch() {
         )}
       </form>
 
-      <button className="location-button" onClick={useLocation} type="button">
+      <button
+        className="location-button"
+        disabled={locating}
+        onClick={useLocation}
+        type="button"
+      >
         <span className="location-icon">
           <Icon name="navigation" size={14} />
         </span>
-        Use my current location
+        {locating ? "Detecting location…" : "Use my current location"}
       </button>
       {locationMessage && (
         <p

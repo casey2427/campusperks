@@ -4,6 +4,8 @@ export interface College {
   shortName: string;
   slug: string;
   location: string;
+  latitude: number;
+  longitude: number;
 }
 
 export interface Business {
