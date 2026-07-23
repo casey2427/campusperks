@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { AuthNav } from "./AuthNav";
 import { Icon } from "./Icon";
 import { Logo } from "./Logo";
 import { MobileNavigation } from "./MobileNavigation";
@@ -20,17 +21,16 @@ export function Header() {
       <div className="header-wide header-inner">
         <Logo />
         <nav className="desktop-nav" aria-label="Primary navigation">
-          <a href="/#how-it-works">How It Works</a>
-          <a href="/#popular-discounts">Popular Discounts</a>
-          <a href="/#categories">Categories</a>
-          <a href="/#for-businesses">For Businesses</a>
+          <Link href="/#how-it-works">How It Works</Link>
+          <Link href="/#popular-discounts">Popular Discounts</Link>
+          <Link href="/#categories">Categories</Link>
+          <Link href="/#for-businesses">For Businesses</Link>
           <Link className="submit-nav-link" href="/submit-discount">
             Submit a Discount
           </Link>
         </nav>
         <div className="header-actions">
-          <Link className="login-link" href="/login">Log In</Link>
-          <Link className="button button-primary signup-button" href="/signup">Sign Up</Link>
+          <AuthNav />
           <button
             aria-controls="mobile-navigation"
             aria-expanded={open}
