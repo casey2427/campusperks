@@ -18,10 +18,21 @@ type SavedDeal = {
   businessName: string;
 };
 
+type SubmissionSummary = {
+  id: string;
+  business_name: string;
+  discount_title: string;
+  status: "pending" | "approved" | "rejected";
+  created_at: string;
+  published_discount_id: string | null;
+};
+
 export function AccountPanel() {
   const [user, setUser] = useState<User | null>(null);
   const [colleges, setColleges] = useState<CollegeOption[]>([]);
   const [savedDeals, setSavedDeals] = useState<SavedDeal[]>([]);
+  const [submissions, setSubmissions] = useState<SubmissionSummary[]>([]);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [collegeId, setCollegeId] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -58,13 +69,14 @@ export function AccountPanel() {
           .order("name"),
         supabase
           .from("profiles")
-          .select("college_id")
+          .select("college_id, is_admin")
           .eq("id", currentUser.id)
           .maybeSingle(),
       ]);
 
       setColleges((collegeRows as CollegeOption[] | null) ?? []);
       setCollegeId(profile?.college_id ?? "");
+      setIsAdmin(Boolean(profile?.is_admin));
 
       const { data: savedRows } = await supabase
         .from("saves")
@@ -107,6 +119,18 @@ export function AccountPanel() {
             })),
         );
       }
+
+      const { data: submissionRows } = await supabase
+        .from("discount_submissions")
+        .select(
+          "id, business_name, discount_title, status, created_at, published_discount_id",
+        )
+        .eq("submitted_by", currentUser.id)
+        .order("created_at", { ascending: false });
+
+      setSubmissions(
+        (submissionRows as SubmissionSummary[] | null) ?? [],
+      );
 
       setLoading(false);
     }
@@ -199,6 +223,12 @@ export function AccountPanel() {
           <span className="eyebrow">Student account</span>
           <h1>Welcome, {displayName}</h1>
           <p>{user.email}</p>
+          {isAdmin && (
+            <Link className="account-admin-link" href="/admin">
+              <Icon name="shield" size={15} />
+              Open administrator review queue
+            </Link>
+          )}
         </div>
       </div>
 
@@ -283,6 +313,58 @@ export function AccountPanel() {
           )}
         </section>
       </div>
+
+      <section className="account-submissions-card">
+        <div className="account-submissions-heading">
+          <div>
+            <span className="account-card-icon">
+              <Icon name="tag" size={22} />
+            </span>
+            <div>
+              <h2>My submitted discounts</h2>
+              <p>Follow each discount from submission through review.</p>
+            </div>
+          </div>
+          <Link className="button secondary-button" href="/submit-discount">
+            Submit another
+          </Link>
+        </div>
+
+        {submissions.length > 0 ? (
+          <div className="account-submission-list">
+            {submissions.map((submission) => (
+              <article key={submission.id}>
+                <div>
+                  <span
+                    className={`account-submission-status status-${submission.status}`}
+                  >
+                    {submission.status}
+                  </span>
+                  <strong>{submission.business_name}</strong>
+                  <small>{submission.discount_title}</small>
+                </div>
+                {submission.published_discount_id ? (
+                  <Link href={`/discounts/${submission.published_discount_id}`}>
+                    View listing <Icon name="arrow-right" size={14} />
+                  </Link>
+                ) : (
+                  <time dateTime={submission.created_at}>
+                    {new Intl.DateTimeFormat("en-US", {
+                      month: "short",
+                      day: "numeric",
+                    }).format(new Date(submission.created_at))}
+                  </time>
+                )}
+              </article>
+            ))}
+          </div>
+        ) : (
+          <div className="account-submissions-empty">
+            <p>You haven’t submitted any discounts yet.</p>
+            <Link href="/submit-discount">Share the first one</Link>
+          </div>
+        )}
+      </section>
 
       <button className="account-page-signout" onClick={signOut} type="button">
         Log out of CampusPerks
