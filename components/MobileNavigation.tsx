@@ -13,6 +13,7 @@ const links = [
   ["Popular Discounts", "#popular-discounts"],
   ["Categories", "#categories"],
   ["For Businesses", "#for-businesses"],
+  ["Submit a Discount", "/submit-discount"],
 ];
 
 export function MobileNavigation({ open, onClose }: MobileNavigationProps) {

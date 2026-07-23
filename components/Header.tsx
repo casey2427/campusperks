@@ -17,13 +17,16 @@ export function Header() {
 
   return (
     <header className="site-header">
-      <div className="container header-inner">
+      <div className="header-wide header-inner">
         <Logo />
         <nav className="desktop-nav" aria-label="Primary navigation">
           <a href="#how-it-works">How It Works</a>
           <a href="#popular-discounts">Popular Discounts</a>
           <a href="#categories">Categories</a>
           <a href="#for-businesses">For Businesses</a>
+          <Link className="submit-nav-link" href="/submit-discount">
+            Submit a Discount
+          </Link>
         </nav>
         <div className="header-actions">
           <Link className="login-link" href="/login">Log In</Link>
