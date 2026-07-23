@@ -66,6 +66,10 @@ const businesses: Business[] = [
   { id: "fit-house", name: "Fit House", slug: "fit-house", initials: "FH", color: "#0f766e" },
   { id: "city-cinema", name: "City Cinema", slug: "city-cinema", initials: "CC", color: "#db2777" },
   { id: "green-bowl", name: "Green Bowl", slug: "green-bowl", initials: "GB", color: "#16a34a" },
+  { id: "tech-stop", name: "Tech Stop", slug: "tech-stop", initials: "TS", color: "#2563eb" },
+  { id: "student-stage", name: "Student Stage", slug: "student-stage", initials: "SS", color: "#c026d3" },
+  { id: "metro-cycle", name: "Metro Cycle", slug: "metro-cycle", initials: "MC", color: "#ea580c" },
+  { id: "book-nook", name: "Book Nook", slug: "book-nook", initials: "BN", color: "#4f46e5" },
 ];
 
 export const discounts: Discount[] = [
@@ -112,6 +116,54 @@ export const discounts: Discount[] = [
     verificationStatus: "pending-review",
     lastChecked: "Jul 8, 2026",
     accent: "linear-gradient(135deg, #dcfce7, #fef3c7)",
+  },
+];
+
+export const collegeDiscounts: Discount[] = [
+  ...discounts,
+  {
+    id: "tech-stop-accessories",
+    business: businesses[4],
+    title: "10% off select accessories",
+    category: "Technology",
+    address: "215 College Boulevard",
+    distance: "0.5 mi",
+    verificationStatus: "possibly-outdated",
+    lastChecked: "Jun 22, 2026",
+    accent: "linear-gradient(135deg, #dbeafe, #eef2ff)",
+  },
+  {
+    id: "student-stage-tickets",
+    business: businesses[5],
+    title: "Reduced-price student tickets",
+    category: "Entertainment",
+    address: "92 Arts District Way",
+    distance: "0.9 mi",
+    verificationStatus: "student-confirmed",
+    lastChecked: "Jul 17, 2026",
+    accent: "linear-gradient(135deg, #fae8ff, #fce7f3)",
+  },
+  {
+    id: "metro-cycle-pass",
+    business: businesses[6],
+    title: "Student monthly ride pass",
+    category: "Travel",
+    address: "18 Transit Plaza",
+    distance: "1.2 mi",
+    verificationStatus: "official-source",
+    lastChecked: "Jul 14, 2026",
+    accent: "linear-gradient(135deg, #ffedd5, #fef3c7)",
+  },
+  {
+    id: "book-nook-textbooks",
+    business: businesses[7],
+    title: "Buyback bonus with student ID",
+    category: "Shopping",
+    address: "305 University Avenue",
+    distance: "1.6 mi",
+    verificationStatus: "pending-review",
+    lastChecked: "Jul 6, 2026",
+    accent: "linear-gradient(135deg, #ede9fe, #e0e7ff)",
   },
 ];
 

@@ -1,29 +1,61 @@
-import { Logo } from "@/components/Logo";
+import type { Metadata } from "next";
+import { notFound } from "next/navigation";
+import { CollegeResults } from "@/components/CollegeResults";
+import { Footer } from "@/components/Footer";
+import { Header } from "@/components/Header";
 import { colleges } from "@/data/mock-data";
+
+type CollegePageProps = {
+  params: Promise<{ slug: string }>;
+};
+
+export async function generateMetadata({
+  params,
+}: CollegePageProps): Promise<Metadata> {
+  const { slug } = await params;
+  const college = colleges.find((item) => item.slug === slug);
+
+  if (!college) {
+    return {
+      title: "College not found | CampusPerks",
+    };
+  }
+
+  const title = `Student Discounts Near ${college.shortName} | CampusPerks`;
+  const description = `Browse sample student discounts near ${college.name} in ${college.location}.`;
+
+  return {
+    title,
+    description,
+    alternates: {
+      canonical: `https://www.campusperks.example/colleges/${college.slug}`,
+    },
+    openGraph: {
+      title,
+      description,
+      type: "website",
+      url: `https://www.campusperks.example/colleges/${college.slug}`,
+    },
+  };
+}
 
 export default async function CollegePage({
   params,
-}: {
-  params: Promise<{ slug: string }>;
-}) {
+}: CollegePageProps) {
   const { slug } = await params;
   const college = colleges.find((item) => item.slug === slug);
-  const collegeName = college?.shortName ?? "this college";
+
+  if (!college) {
+    notFound();
+  }
 
   return (
-    <main className="placeholder-shell">
-      <Logo />
-      <div className="placeholder-card">
-        <span className="placeholder-pill">Coming soon</span>
-        <h1>CampusPerks deals for {collegeName} are coming soon.</h1>
-        <p>
-          This is a placeholder college page. We&apos;ll connect real nearby
-          deals in a future version.
-        </p>
-        <a className="button button-primary section-button" href="/">
-          Back to homepage
-        </a>
-      </div>
-    </main>
+    <>
+      <Header />
+      <main>
+        <CollegeResults college={college} />
+      </main>
+      <Footer />
+    </>
   );
 }
